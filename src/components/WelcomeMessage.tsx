@@ -6,10 +6,10 @@ interface WelcomeMessageProps {
 }
 
 const SUGGESTIONS = [
-  "Tell me about Maggi noodles ingredients",
-  "I'm diabetic, is Parle-G safe?",
-  "What's maltodextrin and is it bad?",
-  "Pregnant-friendly snacks analysis",
+  "Is Maggi safe for kids?",
+  "I'm diabetic, is Parle-G okay?",
+  "Amul milk vs other brands",
+  "Best biscuits for weight loss",
 ];
 
 export const WelcomeMessage = ({ onSuggestionSelect }: WelcomeMessageProps) => {

@@ -5,9 +5,10 @@ interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  image?: string;
 }
 
-export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) => {
+export const ChatMessage = ({ role, content, isStreaming, image }: ChatMessageProps) => {
   const isUser = role === "user";
 
   // Parse markdown-style formatting for display
@@ -16,17 +17,27 @@ export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) =>
     const paragraphs = text.split(/\n\n+/);
     
     return paragraphs.map((paragraph, i) => {
-      // Handle bullet points
-      if (paragraph.trim().startsWith('-') || paragraph.trim().startsWith('•')) {
+      // Handle bullet points with emojis
+      if (paragraph.trim().startsWith('•') || paragraph.trim().startsWith('-') || /^[🔍💡🩺🤱🏃♀️👋]/.test(paragraph.trim())) {
         const items = paragraph.split('\n').filter(line => line.trim());
         return (
-          <ul key={i} className="list-disc list-inside space-y-1 my-2">
-            {items.map((item, j) => (
-              <li key={j} className="text-sm leading-relaxed">
-                {formatInlineText(item.replace(/^[-•]\s*/, ''))}
-              </li>
-            ))}
-          </ul>
+          <div key={i} className="space-y-2 my-3">
+            {items.map((item, j) => {
+              // Check if it's a header with emoji
+              if (/^[🔍💡🩺🤱🏃♀️👋]/.test(item.trim()) && item.includes('**')) {
+                return (
+                  <div key={j} className="text-base font-semibold text-primary mb-2">
+                    {formatInlineText(item)}
+                  </div>
+                );
+              }
+              return (
+                <div key={j} className="text-sm leading-relaxed pl-2">
+                  {formatInlineText(item.replace(/^[-•]\s*/, ''))}
+                </div>
+              );
+            })}
+          </div>
         );
       }
       
@@ -45,9 +56,9 @@ export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) =>
       }
       
       return (
-        <p key={i} className="text-sm leading-relaxed mb-2 last:mb-0">
+        <div key={i} className="text-sm leading-relaxed mb-2 last:mb-0">
           {formatInlineText(paragraph)}
-        </p>
+        </div>
       );
     });
   };
@@ -95,6 +106,15 @@ export const ChatMessage = ({ role, content, isStreaming }: ChatMessageProps) =>
             : "bg-card border border-border shadow-soft rounded-tl-sm"
         )}
       >
+        {image && (
+          <div className="mb-2">
+            <img 
+              src={image} 
+              alt="Uploaded ingredient image" 
+              className="max-w-full h-auto rounded-lg border border-border"
+            />
+          </div>
+        )}
         <div className={cn(isUser ? "text-chat-user-foreground" : "text-card-foreground")}>
           {formatContent(content)}
         </div>

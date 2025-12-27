@@ -4,13 +4,13 @@ import { ChatInput } from "./ChatInput";
 import { TypingIndicator } from "./TypingIndicator";
 import { WelcomeMessage } from "./WelcomeMessage";
 import { toast } from "@/hooks/use-toast";
+import { geminiService, ChatMessage as GeminiChatMessage } from "@/services/geminiService";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  image?: string;
 }
-
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 export const ChatContainer = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -24,134 +24,43 @@ export const ChatContainer = () => {
     }
   }, [messages]);
 
-  const streamChat = useCallback(async (userMessage: string) => {
-    const userMsg: Message = { role: "user", content: userMessage };
+  const streamChat = useCallback(async (userMessage: string, imageData?: string) => {
+    const userMsg: Message = { role: "user", content: userMessage, image: imageData };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
     try {
-      const allMessages = [...messages, userMsg];
+      // Convert messages to Gemini format
+      const conversationHistory: GeminiChatMessage[] = messages.map((msg, index) => ({
+        id: index.toString(),
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(),
+        image: msg.image
+      }));
+
+      // Get AI response
+      const response = await geminiService.generateResponse(userMessage, conversationHistory, imageData);
       
-      const resp = await fetch(CHAT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ messages: allMessages }),
-      });
-
-      if (!resp.ok) {
-        const errorData = await resp.json().catch(() => ({}));
-        throw new Error(errorData.error || `Request failed with status ${resp.status}`);
-      }
-
-      if (!resp.body) {
-        throw new Error("No response body");
-      }
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let textBuffer = "";
-      let assistantContent = "";
-      let streamDone = false;
-
-      // Add empty assistant message
-      setMessages(prev => [...prev, { role: "assistant", content: "" }]);
+      // Add assistant response
+      setMessages(prev => [...prev, { role: "assistant", content: response }]);
       setIsLoading(false);
 
-      while (!streamDone) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        textBuffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") {
-            streamDone = true;
-            break;
-          }
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const lastIdx = newMessages.length - 1;
-                if (newMessages[lastIdx]?.role === "assistant") {
-                  newMessages[lastIdx] = { ...newMessages[lastIdx], content: assistantContent };
-                }
-                return newMessages;
-              });
-            }
-          } catch {
-            // Incomplete JSON, put it back
-            textBuffer = line + "\n" + textBuffer;
-            break;
-          }
-        }
-      }
-
-      // Final flush
-      if (textBuffer.trim()) {
-        for (let raw of textBuffer.split("\n")) {
-          if (!raw) continue;
-          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
-          if (raw.startsWith(":") || raw.trim() === "") continue;
-          if (!raw.startsWith("data: ")) continue;
-          const jsonStr = raw.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
-            if (content) {
-              assistantContent += content;
-              setMessages(prev => {
-                const newMessages = [...prev];
-                const lastIdx = newMessages.length - 1;
-                if (newMessages[lastIdx]?.role === "assistant") {
-                  newMessages[lastIdx] = { ...newMessages[lastIdx], content: assistantContent };
-                }
-                return newMessages;
-              });
-            }
-          } catch { /* ignore */ }
-        }
-      }
     } catch (error) {
       console.error("Chat error:", error);
       setIsLoading(false);
       
-      // Remove failed assistant message if it was empty
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg?.role === "assistant" && !lastMsg.content) {
-          return prev.slice(0, -1);
-        }
-        return prev;
-      });
-
       toast({
         title: "Unable to get response",
-        description: error instanceof Error ? error.message : "Please try again in a moment.",
+        description: "Please try again in a moment.",
         variant: "destructive",
       });
     }
   }, [messages]);
 
-  const handleSend = useCallback((message: string) => {
-    if (message.trim()) {
-      streamChat(message);
+  const handleSend = useCallback((message: string, imageData?: string) => {
+    if (message.trim() || imageData) {
+      streamChat(message, imageData);
     }
   }, [streamChat]);
 
@@ -176,6 +85,7 @@ export const ChatContainer = () => {
                   key={index}
                   role={message.role}
                   content={message.content}
+                  image={message.image}
                   isStreaming={
                     isLoading &&
                     index === messages.length - 1 &&
